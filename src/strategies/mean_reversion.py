@@ -69,7 +69,7 @@ class MeanReversionStrategy:
                 scores[ticker] = -float(z)  # negative weight for shorts
 
         if not scores:
-            return {}  # hold cash -- no mean reversion opportunities
+            return None  # no signals -- keep existing positions
 
         if self.long_only:
             scores = {t: max(s, 0.0) for t, s in scores.items()}

@@ -25,15 +25,23 @@ import numpy as np
 import pandas as pd
 
 
-def _regime_vol(lookback: dict[str, pd.DataFrame], benchmark_key: str | None = None,
+def _regime_vol(lookback: dict[str, pd.DataFrame], benchmark_key: str = "SPY",
                 window: int = 20) -> float:
-    """Compute annualized realized vol of the benchmark from lookback data."""
-    if benchmark_key and benchmark_key in lookback:
-        close = lookback[benchmark_key]["Close"]
-    else:
-        # Use the ticker with the most data as proxy
-        best = max(lookback, key=lambda t: len(lookback[t]))
-        close = lookback[best]["Close"]
+    """Compute annualized realized vol of the benchmark from lookback data.
+
+    The engine now includes the benchmark in lookback, so SPY should
+    always be available when the backtest uses SPY as benchmark.
+    """
+    # Try explicit benchmark first, then common benchmark tickers
+    for key in [benchmark_key, "SPY", "QQQ", "IWM"]:
+        if key in lookback:
+            close = lookback[key]["Close"]
+            if len(close) >= window + 1:
+                return float(close.pct_change().iloc[-window:].std() * np.sqrt(252))
+
+    # Last resort: use the ticker with the most data
+    best = max(lookback, key=lambda t: len(lookback[t]))
+    close = lookback[best]["Close"]
 
     if len(close) < window + 1:
         return 0.15  # fallback to moderate
@@ -99,7 +107,7 @@ class AdaptiveMeanReversion:
                 scores[ticker] = float(-z)
 
         if not scores:
-            return {}
+            return None  # no mean reversion signals -- keep existing positions
 
         sorted_t = sorted(scores, key=scores.get, reverse=True)
         keep = set(sorted_t[:self.top_n])
@@ -155,7 +163,7 @@ class AdaptiveMomentum:
                 scores[ticker] = float(ret)
 
         if not scores:
-            return {}
+            return None  # no momentum signals -- keep existing positions
 
         sorted_t = sorted(scores, key=scores.get, reverse=True)
         keep = set(sorted_t[:top_n])

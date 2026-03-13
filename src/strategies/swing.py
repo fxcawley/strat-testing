@@ -125,7 +125,7 @@ class SwingStrategy:
             scores[ticker] = float(score)
 
         if not scores:
-            return {}
+            return None  # no swing signals -- keep existing positions
 
         sorted_tickers = sorted(scores, key=scores.get, reverse=True)
         keep = set(sorted_tickers[: self.top_n])

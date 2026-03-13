@@ -258,7 +258,7 @@ class MultiSignalComposite:
             raw[ticker] = signals
 
         if len(raw) < 5:
-            return {}
+            return None
 
         # Percentile-rank each dimension across the universe
         tickers = list(raw.keys())

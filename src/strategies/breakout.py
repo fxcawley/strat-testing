@@ -73,7 +73,7 @@ class BreakoutStrategy:
             scores[ticker] = float(breakout_pct)
 
         if not scores:
-            return {}  # no breakouts today
+            return None  # no breakouts -- keep existing positions
 
         sorted_tickers = sorted(scores, key=scores.get, reverse=True)
         keep = set(sorted_tickers[: self.top_n])

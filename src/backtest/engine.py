@@ -207,12 +207,17 @@ def run_backtest(
 
         # --- Rebalance ---
         if date in rebal_set:
-            lookback = {t: df.loc[:date] for t, df in price_data.items() if t in universe}
+            # Include benchmark in lookback so strategies can compute market-level signals
+            lookback = {t: df.loc[:date] for t, df in price_data.items()
+                        if t in universe or t == benchmark}
             target_weights = strategy.generate_signals(date, universe, lookback)
 
             # None means "skip this rebalance, keep existing positions"
-            if target_weights is None:
+            # But if we hold nothing, there's nothing to keep -- stay in cash.
+            if target_weights is None and holdings:
                 continue
+            if target_weights is None:
+                target_weights = {}  # no positions to keep, treat as empty
 
             # Convert target weights to target share counts
             # First, get current prices for everything we might trade
