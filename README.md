@@ -109,11 +109,13 @@ src/
 
 ### Blend: XS Momentum + Trend Following (50/50)
 
+All prices are dividend-adjusted (total return). Costs at 3bps, 2% rebalance threshold.
+
 | Period | Return | CAGR | Sharpe | Max DD | Costs | SPY |
 |---|---|---|---|---|---|---|
-| 2005-2013 (GFC) | +94% | 7.7% | 0.67 | -19% | $1,078 | +53% |
-| 2014-2019 | +45% | 6.5% | 0.61 | -21% | $963 | +76% |
-| 2020-2026 | +65% | 8.5% | 0.60 | -25% | $954 | +105% |
+| 2005-2013 (GFC) | +126% | 9.5% | 0.84 | -21% | $1,099 | +83% |
+| 2014-2019 | +57% | 7.8% | 0.78 | -19% | $839 | +97% |
+| 2020-2026 | +75% | 9.5% | 0.69 | -24% | $1,033 | +124% |
 
 The blend underperforms SPY in the two bull-market periods (2014-2019, 2020-2026) because it holds bonds and gold via the trend component. It outperforms in 2005-2013 because trend following exits equities during the 2008 crash. The max drawdown (-19% to -25%) is far shallower than SPY (-55% in 2008).
 

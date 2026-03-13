@@ -30,10 +30,14 @@ def fetch_prices(
     end: str | None = None,
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Fetch daily OHLCV data for *ticker*.
+    """Fetch daily OHLCV data for *ticker* (dividend-adjusted).
+
+    Uses auto_adjust=True so all prices (Open, High, Low, Close) are
+    adjusted for dividends and splits.  This means Close reflects total
+    return, not just price return.
 
     Returns a DataFrame indexed by date with columns:
-        Open, High, Low, Close, Adj Close, Volume
+        Open, High, Low, Close, Volume
     """
     if end is None:
         end = datetime.now().strftime("%Y-%m-%d")
@@ -44,7 +48,7 @@ def fetch_prices(
     if use_cache and cp.exists():
         return pd.read_parquet(cp)
 
-    df = yf.download(ticker, start=start, end=end, auto_adjust=False, progress=False, session=get_session())
+    df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False, session=get_session())
     if df.empty:
         raise ValueError(f"No price data returned for {ticker}")
 
