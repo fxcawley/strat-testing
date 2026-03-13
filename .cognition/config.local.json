@@ -1,0 +1,102 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(ssh target)",
+      "Exec(cat)",
+      "Exec(ssh)",
+      "Exec(dotnet build)",
+      "Exec(where dotnet)",
+      "Exec(\"C:\\Program Files\\dotnet\\dotnet.exe\")",
+      "Exec(\"C:\\Users\\lcawley\\.dotnet\\dotnet.exe\")",
+      "Exec(dotnet test)",
+      "Exec(dotnet publish)",
+      "Exec(git diff)",
+      "Exec(git commit)",
+      "Exec(ls)",
+      "Exec(\"$HOME/.dotnet/dotnet.exe\")",
+      "Exec(grep)",
+      "Exec(git status)",
+      "Exec(git log)",
+      "Exec(git add)",
+      "Exec(mkdir)",
+      "Exec(dir)",
+      "Exec(find Analysis_Services/AnalysisPortal/KLA.AnalysisPortal.MVC)",
+      "Exec(head Analysis_Services/AnalysisPortal/KLA.AnalysisPortal.MVC/KLA.AnalysisPortal.MVC.csproj)",
+      "Exec(git rm)",
+      "Exec(find)",
+      "Exec(git)",
+      "Exec(powershell)",
+      "Exec(\"C:\\Users\\lcawley\\dotnet-sdk\\dotnet.exe\" publish)",
+      "Exec(\"$HOME/.dotnet/dotnet.exe\" run)",
+      "Exec(curl)",
+      "Exec(scp)",
+      "Exec(sleep)",
+      "Exec(python3)",
+      "Exec(timeout bash)",
+      "Exec(basename)",
+      "Exec(date)",
+      "Exec(bash)",
+      "Exec(\"C:/Program Files/dotnet/dotnet.exe\" build)",
+      "Exec(\"$HOME/.dotnet/dotnet\")",
+      "Exec(diff)",
+      "Exec(rsync)",
+      "Exec(TIMESTAMP=$(date)",
+      "Exec(rm)",
+      "Exec(tail)",
+      "Exec(tee)",
+      "Exec(dotnet clean)",
+      "Exec(source)",
+      "Exec(wc)",
+      "Exec(head)"
+    ]
+  },
+  "skills": {
+    "bug-verification": {
+      "path": ".cognition/skills/bug-verification/SKILL.md",
+      "description": "Bug verification protocol — MUST be invoked before reporting any observation as a bug. Cross-references BUG_TRACKER.md to prevent duplicate reports and debunked claims."
+    }
+  },
+  "workflows": {
+    "bucket1-test": {
+      "path": ".cognition/workflows/bucket1-test/WORKFLOW.md",
+      "script": ".cognition/workflows/bucket1-test/run_bucket1_strict.sh",
+      "description": "Bucket 1 STRICT E2E test — no fallbacks, no exceptions, production best practices only. Validates full DalService pipeline end-to-end against DART Slot 9.",
+      "schedule": "periodic",
+      "bug_output": {
+        "bucket1": "AutonomousDevelopment/DeploymentBugs/Bucket1/",
+        "bucket2": "AutonomousDevelopment/DeploymentBugs/Bucket2/"
+      },
+      "artifact_output": "AutonomousDevelopment/BUCKET-1-TESTING/test-results/",
+      "verbosity": "maximum"
+    }
+  },
+  "rules": {
+    "bug_verification_required": true,
+    "bug_tracker_path": "AutonomousDevelopment/DeploymentBugs/BUG_TRACKER.md",
+    "bug_report_paths": {
+      "bucket1": "AutonomousDevelopment/DeploymentBugs/Bucket1/",
+      "bucket2": "AutonomousDevelopment/DeploymentBugs/Bucket2/"
+    },
+    "agent_accountability": {
+      "enabled": true,
+      "bootstrap": ".cognition/agent-accountability/agent_bootstrap.sh",
+      "registry": ".cognition/agent-accountability/agent_registry.jsonl",
+      "audit_log": ".cognition/agent-accountability/audit_log.jsonl",
+      "integrity_checker": ".cognition/agent-accountability/check_integrity.sh",
+      "context_extractor": ".cognition/agent-accountability/extract_context.sh",
+      "protocol": ".cognition/agent-accountability/ACCOUNTABILITY.md",
+      "require_agent_id_in_reports": true,
+      "require_audit_entry_per_test": true,
+      "require_dedicated_branch": true,
+      "require_dedicated_workdir": true,
+      "branch_prefix": "agent/",
+      "workdir_prefix": "AutonomousDevelopment/AgentWork/"
+    },
+    "honest_reporting": {
+      "enum_source": "Analysis_Services/KLA.DalService/KLA.DalService/Models/DalEnums.cs",
+      "DalJobState": {"Queued": 0, "Running": 1, "Paused": 2, "Completed": 3, "Failed": 4, "Cancelled": 5},
+      "success_requires": ["FinalState == 3", "AUC > 0", "ModelPath != null", "RocStatus != fallback"],
+      "banned_phrases_in_pass_context": ["fallback mode", "expected behavior for the fallback pipeline", "degraded mode"]
+    }
+  }
+}
