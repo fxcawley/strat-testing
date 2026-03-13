@@ -7,6 +7,8 @@ Usage:
 """
 
 import sys
+import time
+import random
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -19,97 +21,73 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
 from src.data.prices import fetch_prices, BENCHMARKS
-from src.data.ratings import current_consensus
-from src.data.universe import SP500_SAMPLE
+from src.data.ratings import build_consensus_history
+from src.data.universe import SP500_CURRENT
 from src.backtest.engine import run_backtest, BacktestResult
 from src.backtest.metrics import (
     sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio,
-    alpha_beta, rolling_beta, plot_equity, plot_drawdown,
+    alpha_beta, rolling_beta,
 )
 from src.analysis.alpha import t_test_alpha, bootstrap_alpha, rolling_alpha
+from src.strategies.analyst_ratings import AnalystRatingStrategy
 from src.strategies.buy_and_hold import BuyAndHoldStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.utils.display import print_summary
 
 
 # ── Config ──────────────────────────────────────────────────────────────────
-UNIVERSE = SP500_SAMPLE
+# Use a 100-stock random sample from the full S&P 500 to reduce survivorship
+# bias vs the old hand-picked 25, while keeping runtime reasonable.
+# Seed for reproducibility.
+random.seed(42)
+UNIVERSE = sorted(random.sample(SP500_CURRENT, 100))
 START = "2020-01-01"
 END = None  # through today
 BENCHMARK = "SPY"
 REBALANCE = "ME"  # month-end
 INITIAL_CAPITAL = 100_000.0
+COST_PCT = 0.001  # 10bps round-trip (slippage + spread)
 
 
-# ── Pre-fetch analyst ratings (point-in-time snapshot) ─────────────────────
-# The analyst-rating strategy needs live consensus data. Since the backtest
-# engine calls generate_signals() at each rebalance, and we can only observe
-# *current* ratings (not historical), we pre-fetch once and build a strategy
-# that uses this fixed snapshot. This is the honest approach: we are testing
-# "what if I screened today's ratings and held that portfolio since START?"
-
+# ── Pre-fetch analyst consensus histories ──────────────────────────────────
 print("=" * 60)
-print("  FETCHING ANALYST RATINGS FOR UNIVERSE")
+print("  BUILDING POINT-IN-TIME ANALYST CONSENSUS HISTORIES")
 print("=" * 60)
 
-ratings_cache: dict[str, dict] = {}
-for ticker in UNIVERSE:
+consensus_cache: dict[str, pd.DataFrame] = {}
+failed_tickers = []
+for i, ticker in enumerate(UNIVERSE):
     try:
-        info = current_consensus(ticker)
-        ratings_cache[ticker] = info
-        print(f"  {ticker:>6s}: {info['consensus']:>12s}  {info['counts']}")
+        history = build_consensus_history(ticker)
+        consensus_cache[ticker] = history
+        n_events = len(history)
+        date_range = f"{history.index[0].date()} to {history.index[-1].date()}"
+        print(f"  [{i+1:3d}/{len(UNIVERSE)}] {ticker:>6s}: {n_events:4d} snapshots ({date_range})")
     except (ValueError, Exception) as e:
-        print(f"  {ticker:>6s}: FAILED - {e}")
-        raise
+        failed_tickers.append(ticker)
+        print(f"  [{i+1:3d}/{len(UNIVERSE)}] {ticker:>6s}: FAILED - {e}")
+    # Small delay to avoid rate limiting
+    if (i + 1) % 20 == 0:
+        time.sleep(1)
 
-# Build a strategy class that uses the pre-fetched ratings
-DEFAULT_SCORE_MAP = {
-    "strongBuy": 2.0,
-    "buy": 1.0,
-    "hold": 0.0,
-    "sell": -1.0,
-    "strongSell": -2.0,
-}
+# Remove tickers that failed from the universe
+if failed_tickers:
+    print(f"\n  Removed {len(failed_tickers)} tickers with no analyst data: {failed_tickers}")
+    UNIVERSE = [t for t in UNIVERSE if t not in failed_tickers]
 
-
-class PreloadedAnalystRatingStrategy:
-    """Analyst rating strategy using pre-fetched consensus data."""
-
-    def __init__(self, ratings: dict[str, dict], score_map: dict | None = None,
-                 long_only: bool = True, top_n: int = 10):
-        self._ratings = ratings
-        self._score_map = score_map or dict(DEFAULT_SCORE_MAP)
-        self._long_only = long_only
-        self._top_n = top_n
-
-    def generate_signals(self, date, universe, lookback):
-        scores = {}
-        for ticker in universe:
-            info = self._ratings[ticker]
-            label = info["consensus"]
-            score = self._score_map.get(label)
-            if score is None:
-                raise ValueError(f"Consensus label '{label}' for {ticker} not in score_map")
-            scores[ticker] = score
-
-        if self._long_only:
-            scores = {t: max(s, 0.0) for t, s in scores.items()}
-
-        if self._top_n is not None:
-            sorted_tickers = sorted(scores, key=scores.get, reverse=True)
-            keep = set(sorted_tickers[:self._top_n])
-            scores = {t: s for t, s in scores.items() if t in keep}
-
-        total = sum(abs(v) for v in scores.values())
-        if total == 0:
-            raise ValueError("All scores are zero after filtering -- no tradeable signal")
-        return {t: s / total for t, s in scores.items() if abs(s) > 1e-9}
+print(f"\n  Final universe: {len(UNIVERSE)} tickers")
+print(f"  Tickers with consensus history: {len(consensus_cache)}")
 
 
-# ── Run backtests ──────────────────────────────────────────────────────────
+# ── Build strategies ───────────────────────────────────────────────────────
 
 strategies = {
-    "Analyst Ratings": PreloadedAnalystRatingStrategy(ratings_cache, top_n=10, long_only=True),
+    "Analyst Ratings (PIT)": AnalystRatingStrategy(
+        consensus_cache=consensus_cache,
+        top_n=10,
+        long_only=True,
+        min_analysts=3,
+    ),
     "Momentum (60d)": MomentumStrategy(lookback_days=60, top_n=10, long_only=True),
     "Buy & Hold (EW)": BuyAndHoldStrategy(),
 }
@@ -128,6 +106,7 @@ for name, strat in strategies.items():
         benchmark=BENCHMARK,
         rebalance_freq=REBALANCE,
         initial_capital=INITIAL_CAPITAL,
+        cost_pct=COST_PCT,
     )
     results[name] = result
     print_summary(result.summary(), title=name)
@@ -139,7 +118,6 @@ print("\n" + "=" * 60)
 print("  DETAILED COMPARATIVE ANALYSIS")
 print("=" * 60)
 
-# Build comparison table
 rows = []
 for name, result in results.items():
     s = result.summary()
@@ -170,13 +148,13 @@ for name, result in results.items():
         "Bootstrap CI Low": boot["ci_lower"],
         "Bootstrap CI High": boot["ci_upper"],
         "P(alpha > 0)": boot["pct_positive"],
+        "Total Costs": s["total_costs"],
         "N Trades": s["n_trades"],
         "N Days": s["n_days"],
     })
 
 comp = pd.DataFrame(rows).set_index("Strategy")
 
-# Print the table
 pd.set_option("display.float_format", "{:.4f}".format)
 pd.set_option("display.max_columns", 30)
 pd.set_option("display.width", 200)
@@ -194,7 +172,7 @@ for name, result in results.items():
     ax.plot(result.equity_curve.index, result.equity_curve.values, label=name, linewidth=1.5)
 bench = list(results.values())[0]
 ax.plot(bench.benchmark_curve.index, bench.benchmark_curve.values, label=f"Benchmark ({BENCHMARK})", linewidth=1.2, alpha=0.6, linestyle="--", color="gray")
-ax.set_title("Strategy Equity Curves vs Benchmark")
+ax.set_title("Strategy Equity Curves vs Benchmark (with 10bps transaction costs)")
 ax.set_ylabel("Portfolio Value ($)")
 ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
 ax.legend()
@@ -218,7 +196,7 @@ fig.tight_layout()
 fig.savefig(output_dir / "drawdowns.png", dpi=150)
 print(f"Saved: {output_dir / 'drawdowns.png'}")
 
-# 3. Rolling alpha for each strategy
+# 3. Rolling alpha
 fig, axes = plt.subplots(len(results), 1, figsize=(14, 4 * len(results)), sharex=True)
 for ax, (name, result) in zip(axes, results.items()):
     try:
@@ -247,9 +225,17 @@ fig.tight_layout()
 fig.savefig(output_dir / "rolling_beta.png", dpi=150)
 print(f"Saved: {output_dir / 'rolling_beta.png'}")
 
-# Save the comparison table
+# Save comparison
 comp.to_csv(output_dir / "comparison.csv")
 print(f"Saved: {output_dir / 'comparison.csv'}")
+
+# Save universe for reproducibility
+with open(output_dir / "universe.txt", "w") as f:
+    f.write(f"# Universe: {len(UNIVERSE)} tickers (random sample from SP500_CURRENT, seed=42)\n")
+    f.write(f"# Failed/excluded: {failed_tickers}\n")
+    for t in UNIVERSE:
+        f.write(t + "\n")
+print(f"Saved: {output_dir / 'universe.txt'}")
 
 print(f"\n{'=' * 60}")
 print("  ALL BACKTESTS COMPLETE")

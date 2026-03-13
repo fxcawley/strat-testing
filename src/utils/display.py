@@ -23,6 +23,7 @@ def print_summary(summary: dict, title: str = "Backtest Summary") -> None:
         "information_ratio": "{:.2f}",
         "n_trades": "{:,}",
         "n_days": "{:,}",
+        "total_costs": "${:,.2f}",
     }
     for key, val in summary.items():
         f = fmt.get(key, "{}")

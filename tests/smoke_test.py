@@ -13,10 +13,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 def test_imports():
     print("Testing imports...")
     from src.data.prices import fetch_prices, fetch_benchmark, BENCHMARKS
-    from src.data.ratings import fetch_recommendations, current_consensus, screen_universe
-    from src.data.universe import SP500_SAMPLE, SECTOR_ETFS
+    from src.data.ratings import (
+        fetch_upgrades_downgrades, build_consensus_history,
+        consensus_at_date, current_consensus, GRADE_MAP, BUCKET_SCORES,
+    )
+    from src.data.universe import SP500_CURRENT, SECTOR_ETFS
     from src.backtest.engine import run_backtest, BacktestResult
-    from src.backtest.metrics import sharpe_ratio, max_drawdown, alpha_beta, plot_equity
+    from src.backtest.metrics import sharpe_ratio, max_drawdown, alpha_beta
     from src.strategies.analyst_ratings import AnalystRatingStrategy
     from src.strategies.buy_and_hold import BuyAndHoldStrategy
     from src.strategies.momentum import MomentumStrategy
@@ -99,7 +102,6 @@ def test_strict_failures():
 
     print("Testing strict failure modes...")
 
-    # IC with <5 points should raise
     try:
         information_coefficient(pd.Series([1, 2]), pd.Series([3, 4]))
         assert False, "Should have raised"
@@ -107,7 +109,6 @@ def test_strict_failures():
         pass
     print("  information_coefficient raises on insufficient data: OK")
 
-    # alpha_beta with <2 points should raise
     try:
         ab(pd.Series(dtype=float), pd.Series(dtype=float))
         assert False, "Should have raised"
@@ -115,7 +116,6 @@ def test_strict_failures():
         pass
     print("  alpha_beta raises on insufficient data: OK")
 
-    # surprise_regression with <5 points should raise
     try:
         surprise_regression(pd.Series([1, 2]), pd.Series([3, 4]))
         assert False, "Should have raised"
@@ -126,9 +126,30 @@ def test_strict_failures():
     print("  All strict failure modes OK.")
 
 
+def test_buy_and_hold_returns_none():
+    """Verify Buy & Hold returns weights once, then None."""
+    import pandas as pd
+    from src.strategies.buy_and_hold import BuyAndHoldStrategy
+
+    print("Testing Buy & Hold returns None after first call...")
+    bh = BuyAndHoldStrategy()
+    universe = ["A", "B", "C"]
+    date = pd.Timestamp("2024-01-01")
+
+    w1 = bh.generate_signals(date, universe, {})
+    assert w1 is not None
+    assert abs(sum(w1.values()) - 1.0) < 1e-9
+
+    w2 = bh.generate_signals(date, universe, {})
+    assert w2 is None
+
+    print("  Buy & Hold: first call returns weights, second returns None: OK")
+
+
 if __name__ == "__main__":
     test_imports()
     test_metrics()
     test_alpha_tools()
     test_strict_failures()
+    test_buy_and_hold_returns_none()
     print("\n=== All smoke tests passed ===")
