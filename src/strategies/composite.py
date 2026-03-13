@@ -82,14 +82,14 @@ class MomentumMeanRevFilter:
 
     def _normalize(self, scores):
         if not scores:
-            return {}
+            return None  # no signals -- keep existing positions
         scores = {t: max(s, 0.0) for t, s in scores.items()}
         sorted_t = sorted(scores, key=scores.get, reverse=True)
         keep = set(sorted_t[:self.top_n])
         scores = {t: s for t, s in scores.items() if t in keep}
         total = sum(scores.values())
         if total == 0:
-            return {}
+            return None
         return {t: s / total for t, s in scores.items() if s > 1e-9}
 
 
@@ -164,13 +164,13 @@ class PullbackSentiment:
 
     def _normalize(self, scores):
         if not scores:
-            return {}
+            return None  # no signals -- keep existing positions
         sorted_t = sorted(scores, key=scores.get, reverse=True)
         keep = set(sorted_t[:self.top_n])
         scores = {t: s for t, s in scores.items() if t in keep and s > 0}
         total = sum(scores.values())
         if total == 0:
-            return {}
+            return None
         return {t: s / total for t, s in scores.items()}
 
 
