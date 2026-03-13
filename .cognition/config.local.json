@@ -47,7 +47,8 @@
       "Exec(dotnet clean)",
       "Exec(source)",
       "Exec(wc)",
-      "Exec(head)"
+      "Exec(head)",
+      "Exec(python)"
     ]
   },
   "skills": {

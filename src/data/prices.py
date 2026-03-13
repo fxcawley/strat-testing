@@ -19,8 +19,8 @@ from src.data.session import get_session
 CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "cache"
 
 
-def _cache_path(ticker: str, start: str, end: str) -> Path:
-    key = hashlib.md5(f"{ticker}_{start}_{end}".encode()).hexdigest()
+def _cache_path(ticker: str, start: str, end: str, adjusted: bool = True) -> Path:
+    key = hashlib.md5(f"{ticker}_{start}_{end}_adj={adjusted}".encode()).hexdigest()
     return CACHE_DIR / f"{ticker}_{key}.parquet"
 
 
