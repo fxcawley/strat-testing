@@ -184,6 +184,7 @@ def run_backtest(
     # 3. Walk forward with share-count tracking
     cash = initial_capital
     holdings: dict[str, float] = {}  # ticker -> number of shares (fractional)
+    last_known_prices: dict[str, float] = {}  # for carry-forward on non-trading days
     total_costs = 0.0
 
     equity_series: dict[pd.Timestamp, float] = {}
@@ -195,13 +196,12 @@ def run_backtest(
         portfolio_value = cash
         for tkr, shares in holdings.items():
             price = _get_close(price_data, tkr, date)
-            if price is None:
-                # Non-trading day for this ticker; use last known value
-                # (shares are still held, just can't price them today)
-                # For simplicity, skip this ticker's contribution today.
-                # This is conservative -- in practice you'd carry forward.
-                continue
-            portfolio_value += shares * price
+            if price is not None:
+                last_known_prices[tkr] = price
+            else:
+                price = last_known_prices.get(tkr)
+            if price is not None:
+                portfolio_value += shares * price
 
         equity_series[date] = portfolio_value
 
