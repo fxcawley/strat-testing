@@ -136,6 +136,7 @@ def run_backtest(
     lookback_buffer_days: int = 252,
     cost_per_share: float = 0.0,
     cost_pct: float = 0.001,  # 10bps round-trip (slippage + spread)
+    rebalance_threshold: float = 0.0,  # min weight change to trigger a trade
 ) -> BacktestResult:
     """Run a walk-forward backtest with share-count-based position tracking.
 
@@ -165,6 +166,11 @@ def run_backtest(
         Proportional cost on the dollar value of each trade
         (models slippage + half spread).  Applied to the absolute
         dollar amount traded.
+    rebalance_threshold : float
+        Minimum absolute weight change to trigger a trade for a given
+        ticker.  If the difference between current and target weight
+        is below this threshold, the existing position is kept.
+        Set to 0.02 (2%) to avoid unnecessary churn.
     """
     # 1. Fetch all price data up front -- every ticker must succeed
     start_dt = datetime.strptime(start, "%Y-%m-%d")
@@ -237,6 +243,24 @@ def run_backtest(
             target_shares: dict[str, float] = {}
             for tkr, dollars in target_dollars.items():
                 target_shares[tkr] = dollars / current_prices[tkr]
+
+            # Apply rebalance threshold: if the weight change for a ticker
+            # is below the threshold, keep the existing shares instead.
+            if rebalance_threshold > 0 and portfolio_value > 0:
+                for tkr in set(list(target_shares.keys()) + list(holdings.keys())):
+                    old_shares = holdings.get(tkr, 0.0)
+                    new_shares = target_shares.get(tkr, 0.0)
+                    price = current_prices.get(tkr)
+                    if price is None:
+                        continue
+                    old_weight = old_shares * price / portfolio_value
+                    new_weight = new_shares * price / portfolio_value
+                    if abs(new_weight - old_weight) < rebalance_threshold:
+                        # Keep existing position -- below threshold
+                        if old_shares > 0:
+                            target_shares[tkr] = old_shares
+                        elif tkr in target_shares:
+                            del target_shares[tkr]
 
             # Compute trades (delta in shares)
             rebalance_cost = 0.0
