@@ -118,8 +118,9 @@ def run_backtest(
     start: str = "2018-01-01",
     end: str | None = None,
     benchmark: str = "SPY",
-    rebalance_freq: str = "M",  # M = monthly, W = weekly, D = daily
+    rebalance_freq: str = "ME",  # ME = month-end, W = weekly, D = daily
     initial_capital: float = 100_000.0,
+    lookback_buffer_days: int = 252,
 ) -> BacktestResult:
     """Run a walk-forward backtest.
 
@@ -137,22 +138,25 @@ def run_backtest(
         Pandas offset alias for rebalance cadence.
     initial_capital : float
         Starting cash.
+    lookback_buffer_days : int
+        Extra calendar days of price history to fetch before *start*
+        so strategies have lookback data on the first rebalance.
     """
-    # 1. Fetch all price data up front
+    # 1. Fetch all price data up front -- every ticker must succeed
+    # Fetch extra history so strategies have lookback on day one
+    from datetime import datetime, timedelta
+    start_dt = datetime.strptime(start, "%Y-%m-%d")
+    fetch_start = (start_dt - timedelta(days=lookback_buffer_days)).strftime("%Y-%m-%d")
+
     price_data: dict[str, pd.DataFrame] = {}
     for t in set(universe + [benchmark]):
-        try:
-            price_data[t] = fetch_prices(t, start=start, end=end)
-        except ValueError:
-            continue
-
-    if benchmark not in price_data:
-        raise ValueError(f"Could not fetch benchmark {benchmark}")
+        price_data[t] = fetch_prices(t, start=fetch_start, end=end)
 
     bench_close = price_data[benchmark]["Close"]
 
-    # 2. Build rebalance schedule
-    all_dates = bench_close.index.sort_values()
+    # 2. Build rebalance schedule -- only trade from `start` onward
+    #    (earlier data is available for lookback but not for trading)
+    all_dates = bench_close.loc[start:].index.sort_values()
     rebal_dates = all_dates.to_series().groupby(pd.Grouper(freq=rebalance_freq)).last().dropna().values
     rebal_set = set(pd.DatetimeIndex(rebal_dates))
 
@@ -170,8 +174,12 @@ def run_backtest(
         if current_weights:
             pnl = 0.0
             for tkr, w in current_weights.items():
-                if tkr not in price_data or date not in price_data[tkr].index:
-                    continue
+                if tkr not in price_data:
+                    raise RuntimeError(
+                        f"Ticker {tkr} in portfolio weights but missing from price data"
+                    )
+                if date not in price_data[tkr].index:
+                    continue  # legitimate: non-trading day for this ticker
                 p_now = float(price_data[tkr].loc[date, "Close"])
                 p_prev = prev_prices.get(tkr, p_now)
                 if p_prev > 0:

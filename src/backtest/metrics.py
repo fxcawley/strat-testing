@@ -60,7 +60,9 @@ def alpha_beta(
     """OLS alpha (annualized) and beta."""
     aligned = pd.DataFrame({"s": strategy_returns, "b": benchmark_returns}).dropna()
     if len(aligned) < 2:
-        return 0.0, 0.0
+        raise ValueError(
+            f"Insufficient aligned data for alpha/beta: need >= 2, got {len(aligned)}"
+        )
     cov_matrix = np.cov(aligned["s"], aligned["b"])
     beta = cov_matrix[0, 1] / cov_matrix[1, 1] if cov_matrix[1, 1] > 0 else 0.0
     alpha = (aligned["s"].mean() - beta * aligned["b"].mean()) * 252

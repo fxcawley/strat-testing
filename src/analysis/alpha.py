@@ -59,17 +59,23 @@ def rolling_alpha(
 ) -> pd.Series:
     """Rolling annualized alpha (strategy - beta * benchmark)."""
     aligned = pd.DataFrame({"s": strategy_returns, "b": benchmark_returns}).dropna()
+    if len(aligned) < window:
+        raise ValueError(
+            f"Need at least {window} aligned observations, got {len(aligned)}"
+        )
 
-    def _alpha_window(chunk):
-        if len(chunk) < 20:
-            return np.nan
+    alphas = []
+    for i in range(len(aligned)):
+        if i < window - 1:
+            alphas.append(np.nan)
+            continue
+        chunk = aligned.iloc[i - window + 1 : i + 1]
         cov = np.cov(chunk["s"], chunk["b"])
         beta = cov[0, 1] / cov[1, 1] if cov[1, 1] > 0 else 0
-        return (chunk["s"].mean() - beta * chunk["b"].mean()) * 252
+        alpha = (chunk["s"].mean() - beta * chunk["b"].mean()) * 252
+        alphas.append(alpha)
 
-    return aligned.rolling(window).apply(
-        lambda x: np.nan, raw=False  # placeholder -- see below
-    )  # TODO: Replace with proper rolling OLS once you settle on approach
+    return pd.Series(alphas, index=aligned.index, name="rolling_alpha")
 
 
 def information_coefficient(
@@ -79,6 +85,8 @@ def information_coefficient(
     """Rank IC: Spearman correlation between predicted signal and realized return."""
     aligned = pd.DataFrame({"pred": predicted_scores, "real": realized_returns}).dropna()
     if len(aligned) < 5:
-        return 0.0
+        raise ValueError(
+            f"Insufficient data for IC: need >= 5 observations, got {len(aligned)}"
+        )
     corr, _ = stats.spearmanr(aligned["pred"], aligned["real"])
     return float(corr)

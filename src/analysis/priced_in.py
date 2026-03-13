@@ -58,10 +58,11 @@ def event_study(
     rows = []
     for edate in event_dates:
         if edate not in abnormal.index:
-            # Find nearest trading day
             idx = abnormal.index.get_indexer([edate], method="ffill")[0]
             if idx < 0:
-                continue
+                raise ValueError(
+                    f"Event date {edate} predates all available price data"
+                )
             edate = abnormal.index[idx]
 
         loc = abnormal.index.get_loc(edate)
@@ -107,7 +108,9 @@ def surprise_regression(
     """
     aligned = pd.DataFrame({"surprise": surprises, "ret": post_event_returns}).dropna()
     if len(aligned) < 5:
-        return {"slope": 0.0, "r_squared": 0.0, "p_value": 1.0, "n": len(aligned)}
+        raise ValueError(
+            f"Insufficient data for regression: need >= 5, got {len(aligned)}"
+        )
 
     slope, intercept, r, p, se = stats.linregress(aligned["surprise"], aligned["ret"])
     return {

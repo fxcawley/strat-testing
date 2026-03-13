@@ -1,6 +1,7 @@
 # Core data & numerics
 numpy>=1.26
 pandas>=2.2
+pyarrow>=15.0
 
 # Market data
 yfinance>=0.2.36

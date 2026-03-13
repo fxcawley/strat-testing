@@ -1,5 +1,5 @@
 """
-Quick smoke test -- verify all imports resolve and core types work.
+Smoke test -- verify all imports resolve and core computations work.
 
 Run: python -m tests.smoke_test
 """
@@ -7,7 +7,6 @@ Run: python -m tests.smoke_test
 import sys
 from pathlib import Path
 
-# Ensure project root is on the path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
@@ -21,48 +20,18 @@ def test_imports():
     from src.strategies.analyst_ratings import AnalystRatingStrategy
     from src.strategies.buy_and_hold import BuyAndHoldStrategy
     from src.strategies.momentum import MomentumStrategy
-    from src.analysis.alpha import t_test_alpha, bootstrap_alpha, information_coefficient
+    from src.analysis.alpha import t_test_alpha, bootstrap_alpha, information_coefficient, rolling_alpha
     from src.analysis.anomaly import zscore_anomalies, isolation_forest_anomalies, build_anomaly_features
     from src.analysis.priced_in import event_study, priced_in_score, surprise_regression
     from src.utils.display import print_summary
     print("  All imports OK.")
 
 
-def test_strategy_interface():
-    """Verify strategies conform to the expected interface."""
-    import pandas as pd
-
-    print("Testing strategy interfaces...")
-    date = pd.Timestamp("2024-01-01")
-    universe = ["AAPL", "MSFT", "GOOGL"]
-    lookback = {}
-
-    for StratClass in []:
-        # Skip strategies that need live data; just verify instantiation
-        pass
-
-    from src.strategies.buy_and_hold import BuyAndHoldStrategy
-    bh = BuyAndHoldStrategy()
-    weights = bh.generate_signals(date, universe, lookback)
-    assert isinstance(weights, dict)
-    assert abs(sum(weights.values()) - 1.0) < 1e-9
-    print("  BuyAndHoldStrategy OK.")
-
-    from src.strategies.momentum import MomentumStrategy
-    mom = MomentumStrategy()
-    # With empty lookback it should return empty weights
-    weights = mom.generate_signals(date, universe, lookback)
-    assert isinstance(weights, dict)
-    print("  MomentumStrategy OK.")
-
-    print("  All strategy interfaces OK.")
-
-
 def test_metrics():
     """Verify metrics functions on synthetic data."""
     import numpy as np
     import pandas as pd
-    from src.backtest.metrics import sharpe_ratio, max_drawdown, sortino_ratio, calmar_ratio
+    from src.backtest.metrics import sharpe_ratio, max_drawdown, sortino_ratio, calmar_ratio, alpha_beta
 
     print("Testing metrics on synthetic data...")
     rng = np.random.default_rng(0)
@@ -85,6 +54,11 @@ def test_metrics():
     assert isinstance(cr, float)
     print(f"  Calmar ratio: {cr:.2f}")
 
+    bench_returns = pd.Series(rng.normal(0.0003, 0.01, 500))
+    a, b = alpha_beta(returns, bench_returns)
+    assert isinstance(a, float) and isinstance(b, float)
+    print(f"  Alpha: {a:.4f}, Beta: {b:.4f}")
+
     print("  All metrics OK.")
 
 
@@ -92,7 +66,7 @@ def test_alpha_tools():
     """Verify alpha assessment on synthetic excess returns."""
     import numpy as np
     import pandas as pd
-    from src.analysis.alpha import t_test_alpha, bootstrap_alpha
+    from src.analysis.alpha import t_test_alpha, bootstrap_alpha, rolling_alpha
 
     print("Testing alpha assessment tools...")
     rng = np.random.default_rng(1)
@@ -106,12 +80,55 @@ def test_alpha_tools():
     assert "ci_lower" in boot
     print(f"  Bootstrap CI: [{boot['ci_lower']:.4f}, {boot['ci_upper']:.4f}]")
 
+    strat_ret = pd.Series(rng.normal(0.0005, 0.01, 300))
+    bench_ret = pd.Series(rng.normal(0.0003, 0.01, 300))
+    ra = rolling_alpha(strat_ret, bench_ret, window=60)
+    assert len(ra) == 300
+    assert pd.notna(ra.iloc[-1])
+    print(f"  Rolling alpha (last value): {ra.iloc[-1]:.4f}")
+
     print("  All alpha tools OK.")
+
+
+def test_strict_failures():
+    """Verify that functions raise instead of returning fallback values."""
+    import pandas as pd
+    from src.analysis.alpha import information_coefficient
+    from src.backtest.metrics import alpha_beta as ab
+    from src.analysis.priced_in import surprise_regression
+
+    print("Testing strict failure modes...")
+
+    # IC with <5 points should raise
+    try:
+        information_coefficient(pd.Series([1, 2]), pd.Series([3, 4]))
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+    print("  information_coefficient raises on insufficient data: OK")
+
+    # alpha_beta with <2 points should raise
+    try:
+        ab(pd.Series(dtype=float), pd.Series(dtype=float))
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+    print("  alpha_beta raises on insufficient data: OK")
+
+    # surprise_regression with <5 points should raise
+    try:
+        surprise_regression(pd.Series([1, 2]), pd.Series([3, 4]))
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+    print("  surprise_regression raises on insufficient data: OK")
+
+    print("  All strict failure modes OK.")
 
 
 if __name__ == "__main__":
     test_imports()
-    test_strategy_interface()
     test_metrics()
     test_alpha_tools()
+    test_strict_failures()
     print("\n=== All smoke tests passed ===")

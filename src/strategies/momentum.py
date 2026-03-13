@@ -24,14 +24,26 @@ class MomentumStrategy:
         lookback: dict[str, pd.DataFrame],
     ) -> dict[str, float]:
         scores: dict[str, float] = {}
+        skipped: list[str] = []
 
         for ticker in universe:
             df = lookback.get(ticker)
-            if df is None or len(df) < self.lookback_days:
+            if df is None:
+                raise ValueError(
+                    f"No lookback data for {ticker} -- ticker missing from price_data"
+                )
+            if len(df) < self.lookback_days:
+                skipped.append(ticker)
                 continue
             recent = df["Close"].iloc[-self.lookback_days :]
             ret = recent.iloc[-1] / recent.iloc[0] - 1
             scores[ticker] = float(ret)
+
+        if not scores:
+            raise ValueError(
+                f"All {len(universe)} tickers had insufficient lookback "
+                f"(need {self.lookback_days} days). Skipped: {skipped}"
+            )
 
         if self.long_only:
             scores = {t: max(s, 0.0) for t, s in scores.items()}
@@ -41,10 +53,10 @@ class MomentumStrategy:
         scores = {t: s for t, s in scores.items() if t in keep}
 
         total = sum(abs(v) for v in scores.values())
-        if total > 0:
-            weights = {t: s / total for t, s in scores.items() if abs(s) > 1e-9}
-        else:
-            # Fall back to equal weight among top N
-            weights = {t: 1.0 / len(keep) for t in keep} if keep else {}
+        if total == 0:
+            raise ValueError(
+                "All momentum scores are zero -- no tradeable signal"
+            )
+        weights = {t: s / total for t, s in scores.items() if abs(s) > 1e-9}
 
         return weights

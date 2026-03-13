@@ -13,6 +13,8 @@ from datetime import datetime
 import pandas as pd
 import yfinance as yf
 
+from src.data.session import get_session
+
 
 def fetch_recommendations(ticker: str) -> pd.DataFrame:
     """Return the historical analyst recommendations for *ticker*.
@@ -20,7 +22,7 @@ def fetch_recommendations(ticker: str) -> pd.DataFrame:
     Columns (int counts): strongBuy, buy, hold, sell, strongSell, period
     Index: date of the recommendation snapshot.
     """
-    tk = yf.Ticker(ticker)
+    tk = yf.Ticker(ticker, session=get_session())
     rec = tk.recommendations
     if rec is None or rec.empty:
         raise ValueError(f"No recommendation data for {ticker}")
@@ -29,7 +31,7 @@ def fetch_recommendations(ticker: str) -> pd.DataFrame:
 
 def recommendation_trend(ticker: str) -> pd.DataFrame:
     """Return the recommendation trend (monthly aggregates)."""
-    tk = yf.Ticker(ticker)
+    tk = yf.Ticker(ticker, session=get_session())
     trend = tk.recommendations_summary
     if trend is None or trend.empty:
         raise ValueError(f"No recommendation trend for {ticker}")
@@ -63,17 +65,20 @@ def screen_universe(
 
     Returns a DataFrame with one row per ticker that has at least
     *min_strong_buy* strong-buy ratings in its latest snapshot.
+
+    Raises if any ticker fails to fetch -- no silent skipping.
     """
     rows = []
     for t in tickers:
-        try:
-            info = current_consensus(t)
-            if info["counts"].get("strongBuy", 0) >= min_strong_buy:
-                rows.append(info)
-        except Exception:
-            continue
+        info = current_consensus(t)
+        if info["counts"].get("strongBuy", 0) >= min_strong_buy:
+            rows.append(info)
+
     if not rows:
-        return pd.DataFrame()
+        raise ValueError(
+            f"No tickers met the min_strong_buy={min_strong_buy} threshold "
+            f"out of {len(tickers)} screened"
+        )
     df = pd.DataFrame(rows)
     df = df.set_index("ticker")
     return df

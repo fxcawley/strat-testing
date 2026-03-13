@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
 
+from src.data.session import get_session
+
 CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "cache"
 
 
@@ -42,7 +44,7 @@ def fetch_prices(
     if use_cache and cp.exists():
         return pd.read_parquet(cp)
 
-    df = yf.download(ticker, start=start, end=end, auto_adjust=False, progress=False)
+    df = yf.download(ticker, start=start, end=end, auto_adjust=False, progress=False, session=get_session())
     if df.empty:
         raise ValueError(f"No price data returned for {ticker}")
 

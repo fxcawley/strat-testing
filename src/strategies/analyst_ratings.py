@@ -59,12 +59,14 @@ class AnalystRatingStrategy:
         scores: dict[str, float] = {}
 
         for ticker in universe:
-            try:
-                info = current_consensus(ticker)
-                label = info["consensus"]
-                scores[ticker] = self.score_map.get(label, 0.0)
-            except Exception:
-                scores[ticker] = 0.0
+            info = current_consensus(ticker)
+            label = info["consensus"]
+            score = self.score_map.get(label)
+            if score is None:
+                raise ValueError(
+                    f"Consensus label '{label}' for {ticker} not in score_map"
+                )
+            scores[ticker] = score
 
         if self.long_only:
             scores = {t: max(s, 0.0) for t, s in scores.items()}
@@ -75,11 +77,12 @@ class AnalystRatingStrategy:
             keep = set(sorted_tickers[: self.top_n])
             scores = {t: s for t, s in scores.items() if t in keep}
 
-        # Normalize to sum to 1.0 (equal-ish risk)
+        # Normalize to sum to 1.0
         total = sum(abs(v) for v in scores.values())
-        if total > 0:
-            weights = {t: s / total for t, s in scores.items() if abs(s) > 1e-9}
-        else:
-            weights = {}
+        if total == 0:
+            raise ValueError(
+                "All scores are zero after filtering -- no tradeable signal"
+            )
+        weights = {t: s / total for t, s in scores.items() if abs(s) > 1e-9}
 
         return weights
