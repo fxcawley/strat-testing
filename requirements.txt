@@ -5,6 +5,7 @@ pyarrow>=15.0
 
 # Market data
 yfinance>=0.2.36
+curl_cffi>=0.5
 
 # Visualization
 matplotlib>=3.8
