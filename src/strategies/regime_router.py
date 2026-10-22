@@ -67,12 +67,14 @@ class RegimeRouter:
     # Internal state
     _virtual_equity: dict[str, list[float]] = field(default_factory=dict, repr=False)
     _last_weights: dict[str, dict[str, float]] = field(default_factory=dict, repr=False)
+    _last_prices: dict[str, dict[str, float]] = field(default_factory=dict, repr=False)
     _rebalance_count: int = field(default=0, repr=False)
 
     def __post_init__(self):
         for name in self.strategies:
             self._virtual_equity[name] = [1.0]  # normalized starting equity
             self._last_weights[name] = {}
+            self._last_prices[name] = {}
 
     def _compute_regime(
         self, date: pd.Timestamp, universe: list[str],
@@ -190,17 +192,20 @@ class RegimeRouter:
     ):
         """Track virtual performance of a sub-strategy using its last signals."""
         prev_weights = self._last_weights.get(strategy_name, {})
-        if not prev_weights:
+        prev_prices = self._last_prices.get(strategy_name, {})
+        if not prev_weights or not prev_prices:
             return
 
-        # Compute return of the virtual portfolio over the last period
+        # Compute return of the virtual portfolio over the full inter-rebalance period
         ret = 0.0
         for tkr, w in prev_weights.items():
             df = lookback.get(tkr)
-            if df is None or len(df) < 2:
+            if df is None or len(df) < 1:
                 continue
-            period_ret = df["Close"].iloc[-1] / df["Close"].iloc[-2] - 1
-            ret += w * period_ret
+            current_price = float(df["Close"].iloc[-1])
+            prev_price = prev_prices.get(tkr)
+            if prev_price is not None and prev_price > 0:
+                ret += w * (current_price / prev_price - 1)
 
         eq = self._virtual_equity[strategy_name]
         eq.append(eq[-1] * (1 + ret))
@@ -231,6 +236,11 @@ class RegimeRouter:
             # Update virtual tracking
             self._update_virtual_equity(name, sig, lookback)
             self._last_weights[name] = sig
+            # Store current prices for period return calculation at next rebalance
+            self._last_prices[name] = {
+                tkr: float(lookback[tkr]["Close"].iloc[-1])
+                for tkr in sig if tkr in lookback and len(lookback[tkr]) > 0
+            }
 
         # 3. Compute strategy weights
         raw_scores: dict[str, float] = {}

@@ -48,7 +48,8 @@
       "Exec(source)",
       "Exec(wc)",
       "Exec(head)",
-      "Exec(python)"
+      "Exec(python)",
+      "Exec(touch C:/Users/lcawley/strat-testing/src/validation/__init__.py)"
     ]
   },
   "skills": {

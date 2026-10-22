@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from src.data.prices import fetch_prices, fetch_benchmark
+from src.backtest.metrics import sharpe_ratio as _sharpe_ratio
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,7 @@ class BacktestResult:
         cagr = (1 + total_ret) ** (1 / max(n_years, 1e-9)) - 1
 
         ann_vol = r.std() * np.sqrt(252)
-        sharpe = (r.mean() * 252) / ann_vol if ann_vol > 0 else 0.0
+        sharpe = _sharpe_ratio(r)
 
         rolling_max = self.equity_curve.cummax()
         drawdowns = (self.equity_curve - rolling_max) / rolling_max

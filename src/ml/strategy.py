@@ -68,6 +68,7 @@ class MLReturnPredictor:
     _feature_cols: list[str] = field(default_factory=list, repr=False)
     _rebalance_count: int = field(default=0, repr=False)
     _last_features: pd.DataFrame = field(default=None, repr=False)
+    _last_date: pd.Timestamp = field(default=None, repr=False)
 
     def _build_model(self):
         if self.model_type == "ridge":
@@ -92,21 +93,26 @@ class MLReturnPredictor:
 
         # Step 2: if we had features from last rebalance, compute realized
         # returns and add to training history
-        if self._last_features is not None:
+        if self._last_features is not None and self._last_date is not None:
             for ticker in self._last_features.index:
-                if ticker in lookback and len(lookback[ticker]) > 22:
+                if ticker in lookback:
                     close = lookback[ticker]["Close"]
-                    # Realized return over the last month
-                    if len(close) >= 22:
-                        realized_ret = close.iloc[-1] / close.iloc[-22] - 1
-                        feat_row = self._last_features.loc[ticker].to_dict()
-                        feat_row["_target"] = realized_ret
-                        feat_row["_ticker"] = ticker
-                        feat_row["_date"] = date
-                        self._history.append(feat_row)
+                    # Realized return from last rebalance date to now
+                    prev_mask = close.index <= self._last_date
+                    if prev_mask.any():
+                        prev_price = close.loc[prev_mask].iloc[-1]
+                        current_price = close.iloc[-1]
+                        if prev_price > 0:
+                            realized_ret = current_price / prev_price - 1
+                            feat_row = self._last_features.loc[ticker].to_dict()
+                            feat_row["_target"] = realized_ret
+                            feat_row["_ticker"] = ticker
+                            feat_row["_date"] = date
+                            self._history.append(feat_row)
 
-        # Save current features for next month's target computation
+        # Save current features and date for next month's target computation
         self._last_features = current_features.copy()
+        self._last_date = date
 
         # Step 3: check if we have enough training data
         if len(self._history) < self.min_train_months:
@@ -124,8 +130,18 @@ class MLReturnPredictor:
             X_train = train_df[self._feature_cols].values
             y_train = train_df["_target"].values
 
-            # Handle NaN/inf in features
-            X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+            # Handle non-finite values: Ridge needs imputation; GBM handles NaN natively
+            if self.model_type == "gbm":
+                # Preserve NaN (GBM learns optimal splits for missing data),
+                # but replace inf which no model handles
+                X_train = np.where(np.isfinite(X_train) | np.isnan(X_train), X_train, 0.0)
+            else:
+                # For Ridge: replace NaN with column medians, clip inf
+                X_train = np.where(np.isfinite(X_train), X_train, np.nan)
+                col_medians = np.nanmedian(X_train, axis=0)
+                col_medians = np.where(np.isfinite(col_medians), col_medians, 0.0)
+                inds = np.where(np.isnan(X_train))
+                X_train[inds] = np.take(col_medians, inds[1])
 
             # Scale features for ridge
             self._scaler = StandardScaler()
@@ -138,7 +154,14 @@ class MLReturnPredictor:
         # Align current features to training feature columns
         predict_df = current_features.reindex(columns=self._feature_cols, fill_value=0.0)
         X_pred = predict_df.values
-        X_pred = np.nan_to_num(X_pred, nan=0.0, posinf=0.0, neginf=0.0)
+        if self.model_type == "gbm":
+            X_pred = np.where(np.isfinite(X_pred) | np.isnan(X_pred), X_pred, 0.0)
+        else:
+            X_pred = np.where(np.isfinite(X_pred), X_pred, np.nan)
+            col_medians = np.nanmedian(X_pred, axis=0)
+            col_medians = np.where(np.isfinite(col_medians), col_medians, 0.0)
+            inds = np.where(np.isnan(X_pred))
+            X_pred[inds] = np.take(col_medians, inds[1])
         X_pred_scaled = self._scaler.transform(X_pred)
 
         predictions = self._model.predict(X_pred_scaled)

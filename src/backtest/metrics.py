@@ -13,14 +13,49 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
 
-def sharpe_ratio(returns: pd.Series, risk_free: float = 0.0, periods: int = 252) -> float:
+# ---------------------------------------------------------------------------
+# Risk-free rate helper
+# ---------------------------------------------------------------------------
+
+_rf_rate_cache: dict[str, float] = {}
+
+
+def get_risk_free_rate() -> float:
+    """Fetch annualized risk-free rate from 13-week T-bill (^IRX).
+
+    Returns the most recent yield as a decimal (e.g. 0.05 for 5%).
+    Cached per session.  Falls back to 0.0 if the fetch fails.
+    """
+    if "rate" not in _rf_rate_cache:
+        try:
+            import yfinance as yf
+            from src.data.session import get_session
+            irx = yf.download(
+                "^IRX", period="5d", progress=False, session=get_session(),
+            )
+            if isinstance(irx.columns, pd.MultiIndex):
+                irx.columns = irx.columns.get_level_values(0)
+            if not irx.empty:
+                _rf_rate_cache["rate"] = float(irx["Close"].dropna().iloc[-1]) / 100.0
+            else:
+                _rf_rate_cache["rate"] = 0.0
+        except Exception:
+            _rf_rate_cache["rate"] = 0.0
+    return _rf_rate_cache["rate"]
+
+
+def sharpe_ratio(returns: pd.Series, risk_free: float | None = None, periods: int = 252) -> float:
+    if risk_free is None:
+        risk_free = get_risk_free_rate()
     excess = returns - risk_free / periods
     if excess.std() == 0:
         return 0.0
     return float(excess.mean() / excess.std() * np.sqrt(periods))
 
 
-def sortino_ratio(returns: pd.Series, risk_free: float = 0.0, periods: int = 252) -> float:
+def sortino_ratio(returns: pd.Series, risk_free: float | None = None, periods: int = 252) -> float:
+    if risk_free is None:
+        risk_free = get_risk_free_rate()
     excess = returns - risk_free / periods
     downside = excess[excess < 0]
     if downside.std() == 0:
